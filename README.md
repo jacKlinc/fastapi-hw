@@ -19,5 +19,8 @@ app/
   main.py
 ```
 
-  ## Docker
-  `docker compose up -d`
+## Docker
+1. Start container: `docker compose up -d`
+2. Connect to DB: `docker exec -it fastapi-hw-db-1 psql -U myuser -d mydatabase`
+3. `SELECT * FROM routes;`
+
