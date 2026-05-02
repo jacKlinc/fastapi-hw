@@ -24,3 +24,6 @@ app/
 2. Connect to DB: `docker exec -it fastapi-hw-db-1 psql -U myuser -d mydatabase`
 3. `SELECT * FROM routes;`
 
+## Fast API
+
+In root directory: `uv run uvicorn app.main:app`
