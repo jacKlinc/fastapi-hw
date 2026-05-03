@@ -19,7 +19,9 @@ class Token:
 
 
 def encrypt_payload(payload: Dict) -> str:
-    payload["exp"] = datetime.now() + timedelta(days=30)
+    payload["exp"] = datetime.now() + timedelta(
+        days=30  # TODO change to something sensible
+    )
     return jwt.encode(payload, key=KEY, algorithm=ALGORITHM)
 
 

@@ -50,23 +50,17 @@ def get_token(username: str, password: str):
 
 
 @app.get("/routes/{route_id}")
-def get_route(username: str, password: str, route_id: int):
-    response = get_token(username, password)
-    if response["status_code"] == 200:
-        token = decrypt_payload(response["token"])
-        print(token)
-        if datetime.fromtimestamp(token["exp"]) < datetime.now():
+def get_route(token: str, route_id: int):
+    # TODO pass token in header
+    decrypt_payload(token)
+    stmt = select(Routes).where(Routes.id == route_id)
+    with Session(engine) as session:
+        route = session.execute(stmt).scalar()
+        if not route:
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired"
+                status_code=status.HTTP_404_NOT_FOUND, detail="Route not found"
             )
-        stmt = select(Routes).where(Routes.id == route_id)
-        with Session(engine) as session:
-            route = session.execute(stmt).scalar()
-            if not route:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND, detail="Route not found"
-                )
-            return route
+        return route
 
 
 @app.get("/")
