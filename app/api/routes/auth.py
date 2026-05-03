@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Dict
 
@@ -10,10 +11,17 @@ ALGORITHM = "HS256"
 # RS256 (asymmetric) is safer because it requires private key for signing and public for verification
 
 
+@dataclass
+class Token:
+    user_id: str
+    role: str
+    exp: int
+
+
 def encrypt_payload(payload: Dict) -> str:
-    payload["exp"] = datetime.now() + timedelta(minutes=30)
+    payload["exp"] = datetime.now() + timedelta(days=30)
     return jwt.encode(payload, key=KEY, algorithm=ALGORITHM)
 
 
-def decrypt_payload(encoded: str) -> dict:
+def decrypt_payload(encoded: str) -> Token:
     return jwt.decode(encoded, key=KEY, algorithms=[ALGORITHM])
