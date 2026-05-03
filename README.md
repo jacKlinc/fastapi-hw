@@ -26,4 +26,4 @@ app/
 
 ## Fast API
 
-In root directory: `uv run uvicorn app.main:app`
+In root directory: `uv run uvicorn app.main:app --reload`
