@@ -1,5 +1,13 @@
 on: [ push ]
 
+env:
+  POSTGRES_USER: test
+  POSTGRES_PASSWORD: test
+  POSTGRES_PORT: 5432
+  POSTGRES_DB: test
+  POSTGRES_HOST: localhost
+  JWT_SECRET: testsecretthatisfakeandonlyfortesting
+
 jobs:
   unit-tests:
     runs-on: ubuntu-latest
@@ -9,12 +17,12 @@ jobs:
         with:
           python-version: "3.13"
       - run: uv run --group dev pytest tests/unit/
-# TODO fix me
-  # coverage-test:
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: astral-sh/setup-uv@v5
-  #       with:
-  #         python-version: "3.13"
-  #     - run: uv run --group dev pytest --cov=app --cov-report=term-missing
+
+  coverage-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - run: uv run --group dev pytest --cov=app --cov-report=term-missing
