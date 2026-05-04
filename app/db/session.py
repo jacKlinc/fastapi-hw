@@ -1,17 +1,12 @@
-from os import getenv
-
-from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-load_dotenv(override=True)
-user, password, port, database = (
-    getenv("POSTGRES_USER"),
-    getenv("POSTGRES_PASSWORD"),
-    getenv("POSTGRES_PORT"),
-    getenv("POSTGRES_DB"),
-)
-DATABASE_URL = f"postgresql://{user}:{password}@localhost:{port}/{database}"
+from app.core.config import Settings
+
+settings = Settings()
+
+
+DATABASE_URL = f"postgresql://{settings.postgres_user}:{settings.postgres_password}@{settings.postgres_host}:{settings.postgres_port}/{settings.postgres_db}"
 engine = create_engine(DATABASE_URL)
 
 

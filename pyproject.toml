@@ -9,6 +9,7 @@ dependencies = [
     "fastapi>=0.136.1",
     "passlib>=1.7.4",
     "psycopg2-binary>=2.9.12",
+    "pydantic-settings>=2.14.0",
     "pygeohash>=3.2.2",
     "pyjwt>=2.12.1",
     "python-dotenv>=1.2.2",
