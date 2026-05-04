@@ -1,6 +1,16 @@
+import time
+
+import jwt
 import pytest
 
-from app.core.security import hash_password, verify_password
+from app.core.security import (
+    hash_password,
+    verify_password,
+    encrypt_payload,
+    decrypt_payload,
+    KEY,
+    ALGORITHM,
+)
 
 
 @pytest.mark.parametrize(
@@ -26,11 +36,32 @@ def test_verify_correct_password(password):
 @pytest.mark.parametrize(
     "password,wrong",
     [
-        ("correcthorsebatterystaple", "wrong"),
-        ("short", "Short"),
-        ("with spaces", "withspaces"),
-        ("notempty", ""),
+        pytest.param("correcthorsebatterystaple", "wrong", id="completely_wrong"),
+        pytest.param("short", "Short", id="case_sensitive"),
+        pytest.param("with spaces", "withspaces", id="spaces_matter"),
+        pytest.param("notempty", "", id="empty_vs_nonempty"),
     ],
 )
 def test_verify_wrong_password(password, wrong):
     assert verify_password(wrong, hash_password(password)) is False
+
+
+def test_encrypt_payload_is_valid_jwt():
+    token = encrypt_payload({"user_id": "alice", "role": "admin"})
+    decoded = jwt.decode(token, key=KEY, algorithms=[ALGORITHM])
+    assert decoded["user_id"] == "alice"
+    assert decoded["role"] == "admin"
+
+
+def test_encrypt_payload_includes_exp():
+    token = encrypt_payload({"user_id": "alice", "role": "admin"})
+    decoded = jwt.decode(token, key=KEY, algorithms=[ALGORITHM])
+    assert "exp" in decoded
+    assert decoded["exp"] > time.time()
+
+
+def test_decrypt_payload_returns_claims():
+    token = encrypt_payload({"user_id": "bob", "role": "user"})
+    claims = decrypt_payload(token)
+    assert claims["user_id"] == "bob"
+    assert claims["role"] == "user"

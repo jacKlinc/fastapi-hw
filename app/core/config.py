@@ -10,3 +10,7 @@ class Settings(BaseSettings):
     postgres_db: str
     postgres_host: str
     jwt_secret: str
+    jwt_algorithm: str = "HS256"
+
+
+settings = Settings()

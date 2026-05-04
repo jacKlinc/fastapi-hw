@@ -1,29 +1,50 @@
-from dataclasses import dataclass
-from datetime import datetime, timedelta
-from typing import Dict
+from fastapi import status, HTTPException, Depends, APIRouter
+from sqlalchemy.orm import Session
+from sqlalchemy import select
 
-import jwt
-
-# TODO store in .env
-KEY = "secret should be more than 32B just so you know"
-ALGORITHM = "HS256"
-# HS256 (symmetric) offers lower security with faster speeds
-# RS256 (asymmetric) is safer because it requires private key for signing and public for verification
+from app.core.security import hash_password, verify_password, encrypt_payload
+from app.db.session import get_db
+from app.db.models import Users
 
 
-@dataclass
-class Token:
-    user_id: str
-    role: str
-    exp: int
+router = APIRouter(prefix="/auth")
 
 
-def encrypt_payload(payload: Dict) -> str:
-    payload["exp"] = datetime.now() + timedelta(
-        days=30  # TODO change to something sensible
+@router.post("/register")
+def register(
+    username: str, email: str, password: str, session: Session = Depends(get_db)
+):
+    """Create user in database"""
+    hashed = hash_password(password)
+    # TODO generate uuid
+    new_user = Users(username=username, email=email, hashed_password=hashed)
+    # TODO handle existing user
+    session.add(new_user)
+    session.commit()
+    return {"Result": "Success!"}
+
+
+@router.post("/token")
+def get_token(username: str, password: str, session: Session = Depends(get_db)):
+    """Login to get valid token to make requests
+
+    Raises:
+        HTTPException: 404: User not found
+        HTTPException: 401: User found, password failed
+    """
+    stmt = select(Users.hashed_password).where(Users.username == username)
+    result = session.execute(stmt).scalars().first()
+
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
+
+    if verify_password(password, result):
+        response = {"status_code": 200}
+        response["token"] = encrypt_payload({"user_id": username, "role": "admin"})
+        return response
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED, detail="Password failed"
     )
-    return jwt.encode(payload, key=KEY, algorithm=ALGORITHM)
-
-
-def decrypt_payload(encoded: str) -> Token:
-    return jwt.decode(encoded, key=KEY, algorithms=[ALGORITHM])
