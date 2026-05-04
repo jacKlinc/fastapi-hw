@@ -20,7 +20,11 @@ dependencies = [
 dev = [
     "httpx>=0.28.1",
     "pytest>=9.0.3",
+    "pytest-cov>=7.1.0",
 ]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+
+[tool.coverage.report]
+skip_empty = true
