@@ -1,7 +1,9 @@
+from datetime import datetime, timezone
+
 from fastapi import FastAPI, status, HTTPException, Header
 from sqlalchemy.orm import Session
 from sqlalchemy import select
-
+from pygeohash import encode
 
 from app.core.security import hash_password, verify_password
 from app.db.session import engine
@@ -61,6 +63,23 @@ def get_route(route_id: int, token: str = Header(None)):
                 status_code=status.HTTP_404_NOT_FOUND, detail="Route not found"
             )
         return route
+
+
+@app.post("/routes")
+def create_route(name: str, lat: float, lon: float, token: str = Header(None)):
+    """Creates route"""
+    decrypt_payload(token)
+    route = Routes(
+        name=name,
+        lat=lat,
+        lon=lon,
+        geohash=encode(lat, lon),
+        created_at=datetime.now(timezone.utc),
+    )
+    with Session(engine) as session:
+        session.add(route)
+        session.commit()
+    return {"Result": "Success!"}
 
 
 @app.get("/")
