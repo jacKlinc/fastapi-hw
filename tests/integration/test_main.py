@@ -5,6 +5,7 @@ import string
 import pytest
 
 
+# TODO mock DB
 def test_register(client):
     def get_random_string(length):
         characters = string.ascii_letters + string.digits
@@ -55,7 +56,7 @@ def test_get_route(client, auth_token, route_id, status_code):
 def test_create_route(client, auth_token):
     response = client.post(
         "/routes/",
-        params={"name": "TestRoute", "lat": 51.6, "lon": -115.2},
+        json={"name": "TestRoute", "lat": 51.6, "lon": -115.2},
         headers={"token": auth_token},
     )
     assert response.status_code == 200

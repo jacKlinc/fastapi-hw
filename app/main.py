@@ -8,6 +8,7 @@ from pygeohash import encode
 from app.core.security import hash_password, verify_password
 from app.db.session import get_db
 from app.db.models import Users, Routes
+from app.schemas.routes import CreateRoute
 from app.api.routes.auth import encrypt_payload, decrypt_payload
 
 app = FastAPI()
@@ -70,22 +71,20 @@ def get_route(
 
 @app.post("/routes")
 def create_route(
-    name: str,
-    lat: float,
-    lon: float,
+    route: CreateRoute,
     token: str = Header(None),
     session: Session = Depends(get_db),
 ):
     """Creates route"""
     decrypt_payload(token)
-    route = Routes(
-        name=name,
-        lat=lat,
-        lon=lon,
-        geohash=encode(lat, lon),
+    r = Routes(
+        name=route.name,
+        lat=route.lat,
+        lon=route.lon,
+        geohash=encode(route.lat, route.lon),
         created_at=datetime.now(timezone.utc),
     )
-    session.add(route)
+    session.add(r)
     session.commit()
     return {"Result": "Success!"}
 
