@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 
 import pygeohash
 from fastapi import status, HTTPException, Header, Depends, APIRouter, Request
@@ -7,10 +7,11 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from pygeohash import encode
 
 from app.core.security import decrypt_payload
-from app.db.session import get_db
+from app.db.session import get_db, get_async_db
 from app.db.models import Routes
 from app.schemas.routes import CreateRoute
 
@@ -29,16 +30,17 @@ router = APIRouter(prefix="/routes")
 
 @limiter.limit("5/minute", per_method=True)
 @router.get("/{route_id}")
-def get_route(
+async def get_route(
     request: Request,
     route_id: int,
     token: str = Header(None),
-    session: Session = Depends(get_db),
+    session: AsyncSession = Depends(get_async_db),
 ):
     """Returns specific route ID"""
     decrypt_payload(token)
     stmt = select(Routes).where(Routes.id == route_id)
-    route = session.execute(stmt).scalar()
+    result = await session.execute(stmt)
+    route = result.scalar()
     if not route:
         logger.error("Route not found: id=%s", route_id)
         raise HTTPException(
@@ -90,11 +92,11 @@ def get_route_within_radius(
 
 @limiter.limit("5/minute", per_method=True)
 @router.post("/")
-def create_route(
+async def create_route(
     request: Request,
     route: CreateRoute,
     token: str = Header(None),
-    session: Session = Depends(get_db),
+    session: AsyncSession = Depends(get_async_db),
 ):
     """Creates route"""
     decrypt_payload(token)
@@ -103,9 +105,9 @@ def create_route(
         lat=route.lat,
         lon=route.lon,
         geohash=encode(route.lat, route.lon),
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(), # asyncpg does not allow timezone-aware datetimes while sync one does
     )
     session.add(r)
-    session.commit()
+    await session.commit()
     logger.info("Created route name=%s geohash=%s", r.name, r.geohash)
     return {"Result": "Success!"}
