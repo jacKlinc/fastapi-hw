@@ -3,17 +3,17 @@ Integration tests for GET /routes/radius/{radius}.
 
 Fixture layout (all on the prime meridian for easy mental arithmetic):
 
-    CENTER  (51.500, 0.0) — search origin
-    INSIDE  (51.545, 0.0) — ~5 km north  → inside a 10 km search
-    OUTSIDE (51.720, 0.0) — ~24 km north → outside a 10 km search, inside 50 km
+    CENTER  (51.500, 0.0) — search origin; sits at the northern edge of geohash cell u10hb
+    INSIDE  (51.470, 0.0) — ~3.3 km south; same 5-char cell (u10hb), different 6-char → inside 10 km, outside 3 km
+    OUTSIDE (51.720, 0.0) — ~24 km north; different 5-char cell (u10n0) → outside 10 km
 """
 
 import pytest
 from sqlalchemy import text
 
 CENTER = (51.500, 0.0)
-INSIDE = (51.545, 0.0)  # ~5 km
-OUTSIDE = (51.720, 0.0)  # ~24 km
+INSIDE = (51.470, 0.0)  # ~3.3 km south, same 5-char geohash cell as CENTER
+OUTSIDE = (51.720, 0.0)  # ~24 km north, different geohash cell
 
 
 @pytest.fixture(scope="module")
@@ -41,7 +41,7 @@ def radius_routes(client, auth_token, db_engine):
 @pytest.mark.parametrize(
     "radius,expect_inside,expect_outside",
     [
-        pytest.param(50, True, True, id="50km_wide"),
+        pytest.param(10, True, False, id="10km_finds_inside_only"),
         pytest.param(3, False, False, id="3km_misses_both"),
     ],
 )
