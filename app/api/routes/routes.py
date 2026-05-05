@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime, timezone
 
+import pygeohash
 from fastapi import status, HTTPException, Header, Depends, APIRouter, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -45,6 +46,46 @@ def get_route(
         )
     logger.info("Fetched route id=%s", route_id)
     return route
+
+
+def calculate_geohash(radius: float, lat: float, lon: float):
+    geohash_map = [round(5_000 / (4**i), 1) for i in range(11)]
+
+    min_value, index = max(geohash_map), -1
+    for i, d in enumerate(geohash_map):
+        diff = abs(d - radius)
+        if diff < min_value:
+            min_value, index = diff, i
+
+    hashed_point = pygeohash.encode(lat, lon)
+
+    return hashed_point[:index]
+
+
+@limiter.limit("5/minute", per_method=True)
+@router.get("/radius/{radius}")
+def get_route_within_radius(
+    request: Request,
+    radius: int,
+    lat: float,
+    lon: float,
+    token: str = Header(None),
+    session: Session = Depends(get_db),
+):
+    """Returns routes within radius. distance[km]"""
+    decrypt_payload(token)
+    # This is dependent on
+    geo_search = calculate_geohash(radius, lat, lon)
+    logger.info("geo_search=%s", geo_search)
+    stmt = select(Routes).where(Routes.geohash.startswith(geo_search))
+    routes = session.execute(stmt).scalars().all()
+    if not routes:
+        logger.error("Route not found for radius: radius=%s", radius)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Route not found for radius"
+        )
+    logger.info("Fetched route radius=%s", radius)
+    return routes
 
 
 @limiter.limit("5/minute", per_method=True)
