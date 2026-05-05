@@ -2,6 +2,24 @@
 
 A REST API for managing geographic routes. Users register, authenticate via JWT, and create or retrieve routes stored with lat/lon coordinates and a geohash.
 
+## System Design Features
+
+
+![alt text](docs/diagrams/Auth-Flow.drawio.png)
+
+### JWT
+- This uses JSON Web Tokens (JWT) to authenticate user requests
+- The tokens are valid for 30 days which obviously too long for production but works well for a project piece
+
+### Rate Limiting
+- `slowapi`'s built-in rate limiting is a great fit for FastAPI
+- 5 requests a minute was chosen for ease of testing
+
+### Geohashing
+- Geohash-based proximity search over 100k generated routes centred on Canmore. Benchmarked against brute force haversine — ~4x faster at 1k points.
+- Query performance degrades beyond 20km radius due to unindexed prefix scan — a trie or sorted index would restore O(1) lookup at scale
+
+
 ## File Structure
 ```
 app/
