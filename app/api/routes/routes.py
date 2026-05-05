@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 
 from fastapi import status, HTTPException, Header, Depends, APIRouter, Request
@@ -11,6 +12,8 @@ from app.core.security import decrypt_payload
 from app.db.session import get_db
 from app.db.models import Routes
 from app.schemas.routes import CreateRoute
+
+logger = logging.getLogger(__name__)
 
 limiter = Limiter(
     key_func=get_remote_address,
@@ -36,9 +39,11 @@ def get_route(
     stmt = select(Routes).where(Routes.id == route_id)
     route = session.execute(stmt).scalar()
     if not route:
+        logger.error("Route not found: id=%s", route_id)
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Route not found"
         )
+    logger.info("Fetched route id=%s", route_id)
     return route
 
 
@@ -61,4 +66,5 @@ def create_route(
     )
     session.add(r)
     session.commit()
+    logger.info("Created route name=%s geohash=%s", r.name, r.geohash)
     return {"Result": "Success!"}
