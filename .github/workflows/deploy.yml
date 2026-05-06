@@ -8,7 +8,8 @@ jobs:
   deploy-image:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "$DOCKER_PASSWORD" | docker login --username $DOCKER_PASSWORD --password-stdin 
+      - uses: actions/checkout@v4
+      - run: echo "$DOCKER_PASSWORD" | docker login --username $DOCKER_USERNAME --password-stdin
       - run: docker build -t fast-api .
       - run: docker tag fast-api $DOCKER_USERNAME/fast-api:latest
       - run: docker push $DOCKER_USERNAME/fast-api:latest
