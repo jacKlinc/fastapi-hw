@@ -1,0 +1,137 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    io.kompose.service: api
+  name: api
+spec:
+  type: NodePort
+  ports:
+    - name: "8000"
+      port: 8000
+      targetPort: 8000
+  selector:
+    io.kompose.service: api
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    io.kompose.service: db
+  name: db
+spec:
+  ports:
+    - name: "5432"
+      port: 5432
+      targetPort: 5432
+  selector:
+    io.kompose.service: db
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: api
+  name: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: api
+  template:
+    metadata:
+      labels:
+        io.kompose.service: api
+    spec:
+      containers:
+        - envFrom:
+            - configMapRef:
+                name: env
+          image: fastapi-hw-api:latest
+          imagePullPolicy: Never
+          name: api
+          ports:
+            - containerPort: 8000
+              protocol: TCP
+      restartPolicy: Always
+
+---
+apiVersion: v1
+data:
+  JWT_SECRET: "secret-should-be-more-than-32-bytes-long-for-real"
+  POSTGRES_DB: mydatabase
+  POSTGRES_HOST: db
+  POSTGRES_PASSWORD: mypassword
+  POSTGRES_PORT: "5432"
+  POSTGRES_USER: myuser
+kind: ConfigMap
+metadata:
+  labels:
+    io.kompose.service: api-env
+  name: env
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: db
+  name: db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: db
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        io.kompose.service: db
+    spec:
+      containers:
+        - env:
+            - name: POSTGRES_DB
+              value: mydatabase
+            - name: POSTGRES_PASSWORD
+              value: mypassword
+            - name: POSTGRES_USER
+              value: myuser
+          image: postgres:latest
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - pg_isready -U myuser -d mydatabase
+            failureThreshold: 5
+            periodSeconds: 5
+          name: db
+          ports:
+            - containerPort: 5432
+              protocol: TCP
+          volumeMounts:
+            - mountPath: /var/lib/postgresql/data
+              name: postgres-data
+      restartPolicy: Always
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: postgres-data
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  labels:
+    io.kompose.service: postgres-data
+  name: postgres-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi

@@ -94,6 +94,25 @@ docker compose down             # stop containers
 docker compose down -v          # stop and wipe the Postgres volume
 ```
 
+## Kubernetes (minikube)
+
+[resources.yml](resources.yml) holds the Kubernetes manifests, generated from `docker-compose.yml` via `kompose convert -f docker-compose.yml -o resources.yml` — re-run that if the compose file changes.
+
+```bash
+minikube start
+
+# Build the image into minikube's own Docker daemon so the cluster can see it
+eval $(minikube docker-env)
+docker build -t fastapi-hw-api:latest .
+
+kubectl apply -f resources.yml
+
+kubectl get pods
+kubectl get svc
+
+minikube service api --url
+```
+
 To run the API image standalone against an existing Postgres instance:
 
 ```bash
