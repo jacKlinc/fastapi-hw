@@ -63,3 +63,59 @@ Logging is configured in `app/core/logging.py` using Python's `logging.dictConfi
 - **`disable_existing_loggers: False`** — the dictConfig keeps uvicorn's built-in `uvicorn` and `uvicorn.access` loggers intact. Overriding these breaks uvicorn's startup banner and access log format.
 
 - **`logging.getLogger(__name__)` per module** — each router file gets its own logger (`app.api.routes.routes`, `app.api.routes.auth`) so log output is traceable to its source without extra fields.
+
+
+## Docker
+
+Run the full stack (API + Postgres) with Docker Compose:
+
+```bash
+docker compose up -d --build
+```
+
+This builds the API image from the [Dockerfile](Dockerfile), starts Postgres, and waits for its healthcheck before starting the API. The app is then available at `http://localhost:8000`.
+
+Requires a `.env` file (see [.template.env](.template.env)) with at least:
+
+```
+POSTGRES_USER=
+POSTGRES_PASSWORD=
+POSTGRES_DB=
+POSTGRES_PORT=
+POSTGRES_HOST=
+JWT_SECRET=
+```
+
+Useful commands:
+
+```bash
+docker compose logs -f api      # tail API logs
+docker compose down             # stop containers
+docker compose down -v          # stop and wipe the Postgres volume
+```
+
+## Kubernetes (minikube)
+
+[resources.yml](resources.yml) holds the Kubernetes manifests, generated from `docker-compose.yml` via `kompose convert -f docker-compose.yml -o resources.yml` — re-run that if the compose file changes.
+
+```bash
+minikube start
+
+# Build the image into minikube's own Docker daemon so the cluster can see it
+eval $(minikube docker-env)
+docker build -t fastapi-hw-api:latest .
+
+kubectl apply -f resources.yml
+
+kubectl get pods
+kubectl get svc
+
+minikube service api --url
+```
+
+To run the API image standalone against an existing Postgres instance:
+
+```bash
+docker build -t fast-api .
+docker run --env-file .env -p 8000:8000 fast-api
+```
