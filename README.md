@@ -132,5 +132,14 @@ docker compose logs -f otel-collector
 ```
 
 Notes:
-- The collector's `debug` exporter (`otel/collector.yml`) just dumps detailed output to stdout — fine for local dev, not a real backend like Jaeger/Prometheus.
+- The collector's `debug` exporter (`otel/collector.yml`) just dumps detailed output to stdout — fine for confirming traces/logs are flowing, but traces and logs aren't persisted anywhere queryable.
 - App logs only reach the collector because `app/core/logging.py`'s `"app"` logger has `propagate: True`, letting records bubble up to the root logger where the OTel logging auto-instrumentation attaches its OTLP export handler.
+
+### Metrics dashboard (Prometheus + Grafana)
+
+The collector also exports metrics via a `prometheus` exporter (`otel/collector.yml`, port `8889`), which Prometheus scrapes every 5s (`otel/prometheus.yml`). Grafana comes preconfigured with Prometheus as its default datasource (`otel/grafana-datasources.yml`).
+
+- Prometheus: http://localhost:9090
+- Grafana: http://localhost:3000 (login `admin` / `admin`)
+
+Useful metric names to graph in Grafana: `http_server_duration_milliseconds_count`, `http_server_active_requests`, `http_server_response_size_bytes_sum`.
