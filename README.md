@@ -119,3 +119,18 @@ To run the API image standalone against an existing Postgres instance:
 docker build -t fast-api .
 docker run --env-file .env -p 8000:8000 fast-api
 ```
+
+
+## OpenTelemetry
+
+Traces, metrics, and logs are exported over OTLP to a local [OpenTelemetry Collector](otel/collector.yml), which prints them to its own console.
+
+The `api` service in [docker-compose.yml](docker-compose.yml) runs the app wrapped in `opentelemetry-instrument` (see [Dockerfile](Dockerfile)) and points `OTEL_EXPORTER_OTLP_ENDPOINT` at the `otel-collector` service. Start everything with `docker compose up -d --build`, then tail the collector to see telemetry arrive:
+
+```bash
+docker compose logs -f otel-collector
+```
+
+Notes:
+- The collector's `debug` exporter (`otel/collector.yml`) just dumps detailed output to stdout — fine for local dev, not a real backend like Jaeger/Prometheus.
+- App logs only reach the collector because `app/core/logging.py`'s `"app"` logger has `propagate: True`, letting records bubble up to the root logger where the OTel logging auto-instrumentation attaches its OTLP export handler.

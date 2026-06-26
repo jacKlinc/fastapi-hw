@@ -15,5 +15,4 @@ RUN uv sync
 
 COPY ./app /code/app
 
-# run: docker run --env-file .env -p 8000:8000 fast-api
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uv", "run", "opentelemetry-instrument", "--service_name", "fastapi-hw", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
