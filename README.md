@@ -132,8 +132,16 @@ docker compose logs -f otel-collector
 ```
 
 Notes:
-- The collector's `debug` exporter (`otel/collector.yml`) just dumps detailed output to stdout — fine for confirming traces/logs are flowing, but traces and logs aren't persisted anywhere queryable.
+- The collector's `debug` exporter (`otel/collector.yml`) just dumps detailed output to stdout — fine for confirming traces/logs are flowing, but logs aren't persisted anywhere queryable (traces are, via Jaeger below).
 - App logs only reach the collector because `app/core/logging.py`'s `"app"` logger has `propagate: True`, letting records bubble up to the root logger where the OTel logging auto-instrumentation attaches its OTLP export handler.
+
+### Trace viewer (Jaeger)
+
+The collector also exports traces via a second OTLP exporter (`otlp/jaeger` in `otel/collector.yml`) aimed at Jaeger's own native OTLP receiver.
+
+- Jaeger UI: http://localhost:16686 — pick the `fastapi-hw` service to browse spans.
+
+Jaeger's all-in-one image stores traces in memory only, so they're lost on container restart — fine for local dev, not a persistent trace store.
 
 ### Metrics dashboard (Prometheus + Grafana)
 
