@@ -22,7 +22,9 @@ LOGGING_CONFIG = {
         "app": {
             "handlers": ["console"],
             "level": "INFO",
-            "propagate": False,
+            # propagate so the OTel logging auto-instrumentation, which
+            # attaches its OTLP export handler to the root logger, sees these
+            "propagate": True,
         },
         # Silence SQLAlchemy engine logs unless debugging
         "sqlalchemy.engine": {
