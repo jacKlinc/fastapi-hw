@@ -151,3 +151,11 @@ The collector also exports metrics via a `prometheus` exporter (`otel/collector.
 - Grafana: http://localhost:3000 (login `admin` / `admin`)
 
 Useful metric names to graph in Grafana: `http_server_duration_milliseconds_count`, `http_server_active_requests`, `http_server_response_size_bytes_sum`.
+
+
+## Redis
+
+- [x] Run Redis locally with Docker
+- [x] Create hello world app
+- [ ] Integrate into FastAPI
+- [ ] Deploy to CDK on micro

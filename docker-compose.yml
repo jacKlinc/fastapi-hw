@@ -67,5 +67,10 @@ services:
     depends_on:
       - prometheus
 
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+
 volumes:
   postgres_data:
