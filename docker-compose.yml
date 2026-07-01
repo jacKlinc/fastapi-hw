@@ -27,6 +27,8 @@ services:
         condition: service_healthy
       otel-collector:
         condition: service_started
+      redis:
+        condition: service_started
 
   otel-collector:
     image: otel/opentelemetry-collector:latest
