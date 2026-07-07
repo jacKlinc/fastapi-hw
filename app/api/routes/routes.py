@@ -79,10 +79,11 @@ def calculate_geohash(radius: float, lat: float, lon: float):
 @limiter.limit("5/minute", per_method=True)
 @router.get("/radius/{radius}")
 def get_route_within_radius(
-    request: Request,
     radius: int,
     lat: float,
     lon: float,
+    offset: int = 0,
+    limit: int = 100,
     token: str = Header(None),
     session: Session = Depends(get_db),
 ):
@@ -91,7 +92,13 @@ def get_route_within_radius(
     # This is dependent on
     geo_search = calculate_geohash(radius, lat, lon)
     logger.info("geo_search=%s", geo_search)
-    stmt = select(Routes).where(Routes.geohash.startswith(geo_search))
+    stmt = (
+        select(Routes)
+        .where(Routes.geohash.startswith(geo_search))
+        .order_by("id")
+        .limit(limit)
+        .offset(offset)
+    )
     routes = session.execute(stmt).scalars().all()
     if not routes:
         logger.error("Route not found for radius: radius=%s", radius)
