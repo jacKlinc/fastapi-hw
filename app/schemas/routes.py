@@ -15,6 +15,7 @@ class PaginationParams(BaseModel):
     page: Optional[int] = None
     pageSize: Optional[int] = None
     since_id: Optional[int] = None
+    cursor: Optional[str] = None
 
 
 def pagination_params(
@@ -23,7 +24,13 @@ def pagination_params(
     page: Optional[int] = None,
     pageSize: Optional[int] = None,
     since_id: Optional[int] = None,
+    cursor: Optional[str] = None,
 ) -> PaginationParams:
     return PaginationParams(
-        offset=offset, limit=limit, page=page, pageSize=pageSize, since_id=since_id
+        offset=offset,
+        limit=limit,
+        page=page,
+        pageSize=pageSize,
+        since_id=since_id,
+        cursor=cursor,
     )
