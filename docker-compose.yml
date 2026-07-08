@@ -22,6 +22,8 @@ services:
     env_file: .env
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
     depends_on:
       db:
         condition: service_healthy
