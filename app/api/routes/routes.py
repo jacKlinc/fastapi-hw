@@ -82,8 +82,10 @@ def get_route_within_radius(
     radius: int,
     lat: float,
     lon: float,
-    offset: int = 0,
-    limit: int = 100,
+    offset: int = 0,  # where the rows start
+    limit: int = 100,  # how many rows
+    page: int = 0,
+    pageSize: int = 0,
     token: str = Header(None),
     session: Session = Depends(get_db),
 ):
@@ -92,6 +94,9 @@ def get_route_within_radius(
     # This is dependent on
     geo_search = calculate_geohash(radius, lat, lon)
     logger.info("geo_search=%s", geo_search)
+    if page > 0:
+        offset = (page - 1) * pageSize
+        limit = pageSize
     stmt = (
         select(Routes)
         .where(Routes.geohash.startswith(geo_search))
