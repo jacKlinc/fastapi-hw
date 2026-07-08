@@ -78,3 +78,48 @@ def test_no_routes_in_area_returns_404(client, auth_token):
         headers={"token": auth_token},
     )
     assert resp.status_code == 404
+
+
+PAGE_ORIGIN = (10.0, 10.0)  # isolated point, unused elsewhere in the test suite
+
+
+@pytest.fixture(scope="module")
+def page_routes(client, auth_token, db_engine):
+    for i in range(5):
+        client.post(
+            "/routes/",
+            json={
+                "name": f"page_route_{i}",
+                "lat": PAGE_ORIGIN[0],
+                "lon": PAGE_ORIGIN[1],
+            },
+            headers={"token": auth_token},
+        )
+    with db_engine.connect() as conn:
+        return (
+            conn.execute(
+                text("SELECT id FROM routes WHERE name LIKE 'page_route_%' ORDER BY id")
+            )
+            .scalars()
+            .all()
+        )
+
+
+@pytest.mark.parametrize(
+    "params,expected_slice",
+    [
+        pytest.param({}, slice(0, 5), id="no_pagination_returns_all"),
+        pytest.param({"limit": 2}, slice(0, 2), id="limit_only"),
+        pytest.param({"offset": 2, "limit": 2}, slice(2, 4), id="offset_and_limit"),
+        pytest.param({"page": 2, "pageSize": 2}, slice(2, 4), id="page_and_pageSize"),
+    ],
+)
+def test_radius_pagination(client, auth_token, page_routes, params, expected_slice):
+    resp = client.get(
+        "/routes/radius/1",
+        params={"lat": PAGE_ORIGIN[0], "lon": PAGE_ORIGIN[1], **params},
+        headers={"token": auth_token},
+    )
+    assert resp.status_code == 200
+    returned_ids = [r["id"] for r in resp.json()]
+    assert returned_ids == page_routes[expected_slice]
