@@ -58,7 +58,7 @@ def test_radius_membership(
         return
 
     assert resp.status_code == 200
-    returned_ids = [r["id"] for r in resp.json()]
+    returned_ids = [r["id"] for r in resp.json()["routes"]]
 
     if expect_inside:
         assert radius_routes["inside"] in returned_ids
@@ -121,5 +121,5 @@ def test_radius_pagination(client, auth_token, page_routes, params, expected_sli
         headers={"token": auth_token},
     )
     assert resp.status_code == 200
-    returned_ids = [r["id"] for r in resp.json()]
+    returned_ids = [r["id"] for r in resp.json()["routes"]]
     assert returned_ids == page_routes[expected_slice]

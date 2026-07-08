@@ -1,5 +1,7 @@
 import logging
 from datetime import datetime
+import base64
+import binascii
 
 import pygeohash
 from fastapi import status, HTTPException, Header, Depends, APIRouter, Request
@@ -95,6 +97,16 @@ def get_route_within_radius(
     elif pagination.since_id:
         stmt = stmt.where(Routes.id > pagination.since_id).limit(pagination.limit)
         logger.info("pagination.since_id=%s", pagination.since_id)
+    # cursor
+    elif pagination.cursor:
+        try:
+            decoded_id = int(base64.urlsafe_b64decode(pagination.cursor.encode()).decode())
+        except (ValueError, UnicodeDecodeError, binascii.Error):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid cursor"
+            )
+        stmt = stmt.where(Routes.id > decoded_id).limit(pagination.limit)
+        logger.info("pagination.cursor=%s", pagination.cursor)
     # offset-based
     else:
         stmt = stmt.limit(pagination.limit).offset(pagination.offset)
@@ -111,7 +123,8 @@ def get_route_within_radius(
             status_code=status.HTTP_404_NOT_FOUND, detail="Route not found for radius"
         )
     logger.info("Fetched route radius=%s", radius)
-    return routes
+    cursor = base64.urlsafe_b64encode(str(routes[-1].id).encode()).decode()
+    return {"routes": routes, "cursor": cursor}
 
 
 @limiter.limit("5/minute", per_method=True)
