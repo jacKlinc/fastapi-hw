@@ -79,6 +79,7 @@ def calculate_geohash(radius: float, lat: float, lon: float):
 @limiter.limit("5/minute", per_method=True)
 @router.get("/radius/{radius}")
 def get_route_within_radius(
+    request: Request,
     radius: int,
     lat: float,
     lon: float,
