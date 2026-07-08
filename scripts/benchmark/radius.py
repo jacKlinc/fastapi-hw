@@ -172,24 +172,27 @@ def main():
     parser.add_argument("--page", type=int, default=None)
     parser.add_argument("--pageSize", type=int, default=None, dest="page_size")
     parser.add_argument(
-        "--keyset",
-        action="store_true",
-        help="walk forward via since_id instead of re-requesting the same page",
+        "--since_id",
+        type=int,
+        default=None,
+        help="keyset pagination: walk forward starting from this id",
     )
     args = parser.parse_args()
 
     extra_params = build_params(args)
+    keyset = args.since_id is not None
 
     with httpx.Client(base_url=BASE_URL, timeout=30.0) as client:
         token = get_token(client)
         results = []
-        since_id = None
+        since_id = args.since_id
         for _ in range(REQUESTS):
-            result = run_request(client, token, extra_params, since_id if args.keyset else None)
+            result = run_request(client, token, extra_params, since_id if keyset else None)
             results.append(result)
             if result.status_code != 200:
                 break
-            since_id = result.since_id
+            if keyset:
+                since_id = result.since_id
 
     stats = summarize(results, args.label)
     write_csv(stats, extra_params)

@@ -98,12 +98,23 @@ def get_route_within_radius(
     if pagination.page and pagination.pageSize:
         offset = (pagination.page - 1) * pagination.pageSize
         stmt = stmt.limit(pagination.pageSize).offset(offset)
+        logger.info(
+            "pagination.page=%s, pagination.pageSize=%s",
+            pagination.page,
+            pagination.pageSize,
+        )
     # keyset
     elif pagination.since_id:
         stmt = stmt.where(Routes.id > pagination.since_id).limit(pagination.limit)
+        logger.info("pagination.since_id=%s", pagination.since_id)
     # offset-based
     else:
         stmt = stmt.limit(pagination.limit).offset(pagination.offset)
+        logger.info(
+            "pagination.limit=%s, pagination.offset=%s",
+            pagination.limit,
+            pagination.offset,
+        )
 
     routes = session.execute(stmt).scalars().all()
     if not routes:
