@@ -80,20 +80,19 @@ def get_route_within_radius(
     # This is dependent on
     geo_search = calculate_geohash(radius, lat, lon)
     logger.info("geo_search=%s", geo_search)
+    stmt = select(Routes).where(Routes.geohash.startswith(geo_search)).order_by("id")
+
+    # page-based
     if pagination.page and pagination.pageSize:
         offset = (pagination.page - 1) * pagination.pageSize
-        limit = pagination.pageSize
+        stmt = stmt.limit(pagination.pageSize).offset(offset)
+    # keyset
+    elif pagination.since_id:
+        stmt = stmt.where(Routes.id > pagination.since_id).limit(pagination.limit)
+    # offset-based
     else:
-        offset = pagination.offset
-        limit = pagination.limit
+        stmt = stmt.limit(pagination.limit).offset(pagination.offset)
 
-    stmt = (
-        select(Routes)
-        .where(Routes.geohash.startswith(geo_search))
-        .order_by("id")
-        .limit(limit)
-        .offset(offset)
-    )
     routes = session.execute(stmt).scalars().all()
     if not routes:
         logger.error("Route not found for radius: radius=%s", radius)

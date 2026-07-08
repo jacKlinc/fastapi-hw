@@ -14,6 +14,7 @@ class PaginationParams(BaseModel):
     limit: Optional[int] = None  # how many rows
     page: Optional[int] = None
     pageSize: Optional[int] = None
+    since_id: Optional[int] = None
 
 
 def pagination_params(
@@ -21,5 +22,8 @@ def pagination_params(
     limit: Optional[int] = 100,
     page: Optional[int] = None,
     pageSize: Optional[int] = None,
+    since_id: Optional[int] = None,
 ) -> PaginationParams:
-    return PaginationParams(offset=offset, limit=limit, page=page, pageSize=pageSize)
+    return PaginationParams(
+        offset=offset, limit=limit, page=page, pageSize=pageSize, since_id=since_id
+    )

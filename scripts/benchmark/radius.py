@@ -9,8 +9,9 @@ Usage:
     python scripts/benchmark/radius.py --label vanilla
     python scripts/benchmark/radius.py --label offset --offset 100 --limit 50
     python scripts/benchmark/radius.py --label page --page 2 --pageSize 50
+    python scripts/benchmark/radius.py --label keyset --keyset 67
 
-Always runs 200 requests and appends the summary to scripts/benchmark/results.csv.
+Always runs REQUESTS requests and appends the summary to scripts/benchmark/results.csv.
 """
 
 import argparse
@@ -41,6 +42,7 @@ RADIUS = 50
 class Result:
     status_code: int
     duration_ms: float
+    since_id: int | None = None
     row_count: int | None = None
 
 
@@ -62,16 +64,27 @@ def get_token(client: httpx.Client) -> str:
     return resp.json()["token"]
 
 
-def run_request(client: httpx.Client, token: str, extra_params: dict) -> Result:
+def run_request(
+    client: httpx.Client, token: str, extra_params: dict, since_id: int | None = None
+) -> Result:
+    params = {"lat": CANMORE_LAT, "lon": CANMORE_LON, **extra_params}
+    if since_id is not None:
+        params["since_id"] = since_id
+
     start = time.perf_counter()
     resp = client.get(
         f"/routes/radius/{RADIUS}",
-        params={"lat": CANMORE_LAT, "lon": CANMORE_LON, **extra_params},
+        params=params,
         headers={"token": token},
     )
     duration_ms = (time.perf_counter() - start) * 1000
-    row_count = len(resp.json()) if resp.status_code == 200 else None
-    return Result(resp.status_code, duration_ms, row_count)
+
+    if resp.status_code != 200:
+        return Result(resp.status_code, duration_ms)
+
+    json_resp = resp.json()
+    next_since_id = json_resp[-1]["id"] if json_resp else None
+    return Result(resp.status_code, duration_ms, next_since_id, len(json_resp))
 
 
 def percentile(sorted_values: list[float], pct: float) -> float:
@@ -158,13 +171,25 @@ def main():
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--page", type=int, default=None)
     parser.add_argument("--pageSize", type=int, default=None, dest="page_size")
+    parser.add_argument(
+        "--keyset",
+        action="store_true",
+        help="walk forward via since_id instead of re-requesting the same page",
+    )
     args = parser.parse_args()
 
     extra_params = build_params(args)
 
     with httpx.Client(base_url=BASE_URL, timeout=30.0) as client:
         token = get_token(client)
-        results = [run_request(client, token, extra_params) for _ in range(REQUESTS)]
+        results = []
+        since_id = None
+        for _ in range(REQUESTS):
+            result = run_request(client, token, extra_params, since_id if args.keyset else None)
+            results.append(result)
+            if result.status_code != 200:
+                break
+            since_id = result.since_id
 
     stats = summarize(results, args.label)
     write_csv(stats, extra_params)
