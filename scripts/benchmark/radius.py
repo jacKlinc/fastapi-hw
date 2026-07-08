@@ -6,9 +6,11 @@ disable slowapi's limiter before running anything beyond a handful of
 requests, otherwise you're mostly benchmarking 429 responses.
 
 Usage:
-    python scripts/benchmark/radius.py --label vanilla --requests 50
-    python scripts/benchmark/radius.py --label offset --requests 50 \\
-        --param page=1 --param page_size=100 --output scripts/benchmark/results.csv
+    python scripts/benchmark/radius.py --label vanilla
+    python scripts/benchmark/radius.py --label offset --offset 100 --limit 50
+    python scripts/benchmark/radius.py --label page --page 2 --pageSize 50
+
+Always runs 200 requests and appends the summary to scripts/benchmark/results.csv.
 """
 
 import argparse
@@ -26,10 +28,13 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
 BASE_URL = "http://localhost:8000"
+REQUESTS = 1_000
+OUTPUT_PATH = os.path.join(os.path.dirname(__file__), "results.csv")
 
 # Matches the data seeded by scripts/seed.py
 CANMORE_LAT = 51.0884
 CANMORE_LON = -115.3479
+RADIUS = 50
 
 
 @dataclass
@@ -57,18 +62,11 @@ def get_token(client: httpx.Client) -> str:
     return resp.json()["token"]
 
 
-def run_request(
-    client: httpx.Client,
-    radius: int,
-    lat: float,
-    lon: float,
-    token: str,
-    extra_params: dict,
-) -> Result:
+def run_request(client: httpx.Client, token: str, extra_params: dict) -> Result:
     start = time.perf_counter()
     resp = client.get(
-        f"/routes/radius/{radius}",
-        params={"lat": lat, "lon": lon, **extra_params},
+        f"/routes/radius/{RADIUS}",
+        params={"lat": CANMORE_LAT, "lon": CANMORE_LON, **extra_params},
         headers={"token": token},
     )
     duration_ms = (time.perf_counter() - start) * 1000
@@ -121,61 +119,55 @@ def summarize(results: list[Result], label: str) -> dict:
     return stats
 
 
-def write_csv(path: str, stats: dict, extra_params: dict):
+def write_csv(stats: dict, extra_params: dict):
     row = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "params": str(extra_params),
         **stats,
     }
-    file_exists = os.path.exists(path)
-    with open(path, "a", newline="", encoding="utf-8") as f:
+    with open(OUTPUT_PATH, "a", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=list(row.keys()))
-        if not file_exists:
+        if not os.path.exists(OUTPUT_PATH):
             writer.writeheader()
         writer.writerow(row)
+
+
+def build_params(args: argparse.Namespace) -> dict:
+    params = {}
+    if args.offset is not None:
+        params["offset"] = args.offset
+    if args.limit is not None:
+        params["limit"] = args.limit
+    if args.page is not None:
+        params["page"] = args.page
+    if args.page_size is not None:
+        params["pageSize"] = args.page_size
+    return params
 
 
 def main():
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("--radius", type=int, default=50)
-    parser.add_argument("--requests", type=int, default=20)
-    parser.add_argument(
-        "--token",
-        default=None,
-        help="reuse an existing JWT instead of registering a new user",
-    )
     parser.add_argument(
         "--label",
         default="vanilla",
         help="tag for this run, used in the summary and CSV output",
     )
-    parser.add_argument(
-        "--param",
-        action="append",
-        default=[],
-        help="extra query param as key=value, repeatable (e.g. --param page=1 --param page_size=100)",
-    )
-    parser.add_argument(
-        "--output", default=None, help="CSV file to append this run's summary stats to"
-    )
+    parser.add_argument("--offset", type=int, default=None)
+    parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--page", type=int, default=None)
+    parser.add_argument("--pageSize", type=int, default=None, dest="page_size")
     args = parser.parse_args()
 
-    extra_params = dict(p.split("=", 1) for p in args.param)
+    extra_params = build_params(args)
 
     with httpx.Client(base_url=BASE_URL, timeout=30.0) as client:
-        token = args.token or get_token(client)
-        results = [
-            run_request(
-                client, args.radius, CANMORE_LAT, CANMORE_LON, token, extra_params
-            )
-            for _ in range(args.requests)
-        ]
+        token = get_token(client)
+        results = [run_request(client, token, extra_params) for _ in range(REQUESTS)]
 
     stats = summarize(results, args.label)
-    if args.output:
-        write_csv(args.output, stats, extra_params)
+    write_csv(stats, extra_params)
 
 
 if __name__ == "__main__":
