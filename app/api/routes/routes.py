@@ -10,14 +10,19 @@ from fastapi_pagination.ext.sqlalchemy import paginate
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from pygeohash import encode
 
 from app.core.security import decrypt_payload
 from app.db.session import get_db, get_async_db
 from app.db.models import Routes
-from app.schemas.routes import CreateRoute, PaginationParams, RouteOut, pagination_params
+from app.schemas.routes import (
+    CreateRoute,
+    PaginationParams,
+    RouteOut,
+    pagination_params,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +57,21 @@ async def get_route(
         )
     logger.info("Fetched route id=%s", route_id)
     return route
+
+
+@router.get("/inject/{name}")
+async def get_route_inject(name, session: AsyncSession = Depends(get_async_db)):
+    """Returns specific route ID"""
+    query = f"SELECT * FROM routes WHERE name LIKE '%{name}%'"
+    result = await session.execute(text(query))
+    routes = result.scalars().all()
+    if not routes:
+        logger.error("Route not found: name=%s", name)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Route not found"
+        )
+    logger.info("Fetched %s routes", len(routes))
+    return routes
 
 
 def calculate_geohash(radius: float, lat: float, lon: float):
