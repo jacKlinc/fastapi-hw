@@ -1,8 +1,12 @@
 import logging
 from datetime import datetime
+import base64
+import binascii
 
 import pygeohash
 from fastapi import status, HTTPException, Header, Depends, APIRouter, Request
+from fastapi_pagination import Page
+from fastapi_pagination.ext.sqlalchemy import paginate
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
@@ -13,7 +17,7 @@ from pygeohash import encode
 from app.core.security import decrypt_payload
 from app.db.session import get_db, get_async_db
 from app.db.models import Routes
-from app.schemas.routes import CreateRoute
+from app.schemas.routes import CreateRoute, PaginationParams, RouteOut, pagination_params
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +68,12 @@ def calculate_geohash(radius: float, lat: float, lon: float):
     return hashed_point[:index]
 
 
+@router.get("/route-pag/{route_id}", response_model=Page[RouteOut])
+def f_paginate(route_id: float, db: Session = Depends(get_db)):
+    """Trying FastAPI's built-in pagination"""
+    return paginate(db, select(Routes).where(Routes.id < route_id).order_by(Routes.id))
+
+
 @limiter.limit("5/minute", per_method=True)
 @router.get("/radius/{radius}")
 def get_route_within_radius(
@@ -71,6 +81,7 @@ def get_route_within_radius(
     radius: int,
     lat: float,
     lon: float,
+    pagination: PaginationParams = Depends(pagination_params),
     token: str = Header(None),
     session: Session = Depends(get_db),
 ):
@@ -79,7 +90,42 @@ def get_route_within_radius(
     # This is dependent on
     geo_search = calculate_geohash(radius, lat, lon)
     logger.info("geo_search=%s", geo_search)
-    stmt = select(Routes).where(Routes.geohash.startswith(geo_search))
+    stmt = select(Routes).where(Routes.geohash.startswith(geo_search)).order_by("id")
+
+    # page-based
+    if pagination.page and pagination.pageSize:
+        offset = (pagination.page - 1) * pagination.pageSize
+        stmt = stmt.limit(pagination.pageSize).offset(offset)
+        logger.info(
+            "pagination.page=%s, pagination.pageSize=%s",
+            pagination.page,
+            pagination.pageSize,
+        )
+    # keyset
+    elif pagination.since_id:
+        stmt = stmt.where(Routes.id > pagination.since_id).limit(pagination.limit)
+        logger.info("pagination.since_id=%s", pagination.since_id)
+    # cursor
+    elif pagination.cursor:
+        try:
+            decoded_id = int(
+                base64.urlsafe_b64decode(pagination.cursor.encode()).decode()
+            )
+        except (ValueError, UnicodeDecodeError, binascii.Error):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid cursor"
+            )
+        stmt = stmt.where(Routes.id > decoded_id).limit(pagination.limit)
+        logger.info("pagination.cursor=%s", pagination.cursor)
+    # offset-based
+    else:
+        stmt = stmt.limit(pagination.limit).offset(pagination.offset)
+        logger.info(
+            "pagination.limit=%s, pagination.offset=%s",
+            pagination.limit,
+            pagination.offset,
+        )
+
     routes = session.execute(stmt).scalars().all()
     if not routes:
         logger.error("Route not found for radius: radius=%s", radius)
@@ -87,7 +133,8 @@ def get_route_within_radius(
             status_code=status.HTTP_404_NOT_FOUND, detail="Route not found for radius"
         )
     logger.info("Fetched route radius=%s", radius)
-    return routes
+    cursor = base64.urlsafe_b64encode(str(routes[-1].id).encode()).decode()
+    return {"routes": routes, "cursor": cursor}
 
 
 @limiter.limit("5/minute", per_method=True)
@@ -105,7 +152,7 @@ async def create_route(
         lat=route.lat,
         lon=route.lon,
         geohash=encode(route.lat, route.lon),
-        created_at=datetime.now(), # asyncpg does not allow timezone-aware datetimes while sync one does
+        created_at=datetime.now(),  # asyncpg does not allow timezone-aware datetimes while sync one does
     )
     session.add(r)
     await session.commit()
