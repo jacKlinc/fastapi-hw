@@ -5,6 +5,8 @@ import binascii
 
 import pygeohash
 from fastapi import status, HTTPException, Header, Depends, APIRouter, Request
+from fastapi_pagination import Page
+from fastapi_pagination.ext.sqlalchemy import paginate
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
@@ -16,7 +18,7 @@ import redis
 from app.core.security import decrypt_payload
 from app.db.session import get_db, get_async_db
 from app.db.models import Routes
-from app.schemas.routes import CreateRoute, PaginationParams, pagination_params
+from app.schemas.routes import CreateRoute, PaginationParams, RouteOut, pagination_params
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +80,12 @@ def calculate_geohash(radius: float, lat: float, lon: float):
     return hashed_point[:index]
 
 
+@router.get("/route-pag/{route_id}", response_model=Page[RouteOut])
+def f_paginate(route_id: float, db: Session = Depends(get_db)):
+    """Trying FastAPI's built-in pagination"""
+    return paginate(db, select(Routes).where(Routes.id < route_id).order_by(Routes.id))
+
+
 @limiter.limit("5/minute", per_method=True)
 @router.get("/radius/{radius}")
 def get_route_within_radius(
@@ -112,7 +120,9 @@ def get_route_within_radius(
     # cursor
     elif pagination.cursor:
         try:
-            decoded_id = int(base64.urlsafe_b64decode(pagination.cursor.encode()).decode())
+            decoded_id = int(
+                base64.urlsafe_b64decode(pagination.cursor.encode()).decode()
+            )
         except (ValueError, UnicodeDecodeError, binascii.Error):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid cursor"
