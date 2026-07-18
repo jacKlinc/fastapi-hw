@@ -10,7 +10,7 @@ from fastapi_pagination.ext.sqlalchemy import paginate
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from pygeohash import encode
 
@@ -18,6 +18,7 @@ from app.core.security import decrypt_payload
 from app.db.session import get_db, get_async_db
 from app.db.models import Routes
 from app.schemas.routes import (
+    BboxOut,
     CreateRoute,
     PaginationParams,
     RouteOut,
@@ -25,6 +26,8 @@ from app.schemas.routes import (
 )
 
 logger = logging.getLogger(__name__)
+
+BBOX_LIMIT = 500
 
 limiter = Limiter(
     key_func=get_remote_address,
@@ -35,6 +38,47 @@ limiter = Limiter(
 # Authenticated requests usually get a higher limit than anonymous
 # They are easier to track so are given 10-100x rate limit
 router = APIRouter(prefix="/routes")
+
+
+@router.get("/bbox", response_model=BboxOut)
+def get_routes_in_bbox(
+    min_lat: float,
+    min_lon: float,
+    max_lat: float,
+    max_lon: float,
+    session: Session = Depends(get_db),
+):
+    """Returns routes within a lat/lon bounding box, capped at BBOX_LIMIT.
+
+    Registered ahead of GET /{route_id} so "bbox" isn't swallowed as a route_id.
+    """
+    if min_lat >= max_lat or min_lon >= max_lon:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="min_lat/min_lon must be less than max_lat/max_lon",
+        )
+
+    bounds = (
+        Routes.lat.between(min_lat, max_lat),
+        Routes.lon.between(min_lon, max_lon),
+    )
+    total_count = session.execute(
+        select(func.count()).select_from(Routes).where(*bounds)
+    ).scalar_one()
+    routes = (
+        session.execute(select(Routes).where(*bounds).limit(BBOX_LIMIT))
+        .scalars()
+        .all()
+    )
+
+    logger.info(
+        "Fetched bbox routes count=%s total_count=%s", len(routes), total_count
+    )
+    return {
+        "routes": routes,
+        "total_count": total_count,
+        "capped": total_count > BBOX_LIMIT,
+    }
 
 
 @limiter.limit("5/minute", per_method=True)

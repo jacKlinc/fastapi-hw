@@ -21,6 +21,12 @@ class RouteOut(BaseModel):
     created_at: datetime
 
 
+class BboxOut(BaseModel):
+    routes: list[RouteOut]
+    total_count: int
+    capped: bool
+
+
 class PaginationParams(BaseModel):
     offset: Optional[int] = None  # where the rows start
     limit: Optional[int] = None  # how many rows
