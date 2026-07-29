@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from sqlalchemy import Index
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.types import String, Float, DateTime
 
@@ -10,6 +11,7 @@ class Base(DeclarativeBase):
 
 class Routes(Base):
     __tablename__ = "routes"
+    __table_args__ = (Index("ix_routes_lat_lon", "lat", "lon"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(255))
