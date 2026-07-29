@@ -66,14 +66,10 @@ def get_routes_in_bbox(
         select(func.count()).select_from(Routes).where(*bounds)
     ).scalar_one()
     routes = (
-        session.execute(select(Routes).where(*bounds).limit(BBOX_LIMIT))
-        .scalars()
-        .all()
+        session.execute(select(Routes).where(*bounds).limit(BBOX_LIMIT)).scalars().all()
     )
 
-    logger.info(
-        "Fetched bbox routes count=%s total_count=%s", len(routes), total_count
-    )
+    logger.info("Fetched bbox routes count=%s total_count=%s", len(routes), total_count)
     return {
         "routes": routes,
         "total_count": total_count,
@@ -101,21 +97,6 @@ async def get_route(
         )
     logger.info("Fetched route id=%s", route_id)
     return route
-
-
-@router.get("/inject/{name}")
-async def get_route_inject(name, session: AsyncSession = Depends(get_async_db)):
-    """Returns specific route ID"""
-    query = f"SELECT * FROM routes WHERE name LIKE '%{name}%'"
-    result = await session.execute(text(query))
-    routes = result.scalars().all()
-    if not routes:
-        logger.error("Route not found: name=%s", name)
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Route not found"
-        )
-    logger.info("Fetched %s routes", len(routes))
-    return routes
 
 
 def calculate_geohash(radius: float, lat: float, lon: float):
