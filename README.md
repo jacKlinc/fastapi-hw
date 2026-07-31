@@ -19,6 +19,48 @@ A REST API for managing geographic routes. Users register, authenticate via JWT,
 - Geohash-based proximity search over 100k generated routes centred on Canmore. Benchmarked against brute force haversine — ~4x faster at 1k points.
 - Query performance degrades beyond 20km radius due to unindexed prefix scan — a trie or sorted index would restore O(1) lookup at scale
 
+### Bounding Box Search
+- `GET /routes/bbox?min_lat=&min_lon=&max_lat=&max_lon=` returns routes inside a lat/lon box — the shape a map frontend actually asks for, since a viewport is a rectangle, not a radius.
+- Public read (no token, no rate limit) so a React map can pan freely. Results are capped at `BBOX_LIMIT` (500) rows, but the response still carries the true `total_count` plus a `capped` flag so the client can tell "500 routes" from "500 shown of 12,000".
+- Registered *before* `GET /routes/{route_id}` — FastAPI matches routes in declaration order, so `bbox` would otherwise be parsed as a `route_id` and 422.
+- Backed by a composite `(lat, lon)` index (`ix_routes_lat_lon` in [app/db/models.py](app/db/models.py)). `create_all()` won't add an index to an already-existing table, so run [scripts/add_bbox_index.py](scripts/add_bbox_index.py) against a DB seeded before the index existed.
+
+### Pagination
+`GET /routes/radius/{radius}` accepts four mutually exclusive pagination styles (see `pagination_params` in [app/schemas/routes.py](app/schemas/routes.py)), tried in this order:
+
+| Style | Params | Notes |
+| --- | --- | --- |
+| Page-based | `page`, `pageSize` | Computes an offset internally; the familiar "page 3" UI |
+| Keyset | `since_id` | `WHERE id > since_id` — no offset scan, stable under inserts |
+| Cursor | `cursor` | Same as keyset but the id is base64-encoded and opaque; the response returns the next `cursor` |
+| Offset | `offset`, `limit` | Default fallback (`limit=100`) |
+
+`GET /routes/route-pag/{route_id}` is a separate endpoint using `fastapi-pagination`'s native `Page[RouteOut]` / `paginate()` for comparison against the hand-rolled versions above.
+
+### Benchmarks
+
+Results live in [scripts/benchmark/](scripts/benchmark/) as CSVs with a `label` column, appended to on each run.
+
+Pagination ([radius.py](scripts/benchmark/radius.py), 1000 requests each):
+
+| Label | mean ms | p95 ms |
+| --- | --- | --- |
+| vanilla (no pagination) | 17.0 | 24.1 |
+| offset | 9.6 | 15.8 |
+| page | 5.8 | 8.5 |
+| keyset | 7.7 | 12.7 |
+| cursor | 10.8 | 14.7 |
+
+Bounding box ([bbox.py](scripts/benchmark/bbox/bbox.py), 1000 requests mixing 1km and 70km boxes):
+
+| Label | mean ms | p50 ms | p95 ms |
+| --- | --- | --- | --- |
+| no_index | 20.9 | 19.8 | 27.1 |
+| with_index | 13.0 | 6.5 | 22.3 |
+
+The `(lat, lon)` index roughly halves the median. p95 barely moves because the large "zoomed out" boxes are limit-bound, not scan-bound — the index can't help when you're returning 500 rows either way.
+
+Caveat learned the hard way: rebuild the Docker image before benchmarking, or you'll benchmark the old code and record wildly inflated latency.
 
 ## File Structure
 ```
@@ -26,7 +68,9 @@ app/
   api/
     routes/
       auth.py       # register + token endpoints
-      routes.py     # CRUD route endpoints
+      routes.py     # CRUD, bbox, radius + pagination endpoints
+  schemas/
+    routes.py       # request/response models + pagination params
   core/
     config.py       # pydantic-settings config from .env
     logging.py      # logging dictConfig setup
@@ -35,6 +79,10 @@ app/
     models.py
     session.py
   main.py           # app factory, lifespan, middleware
+scripts/
+  seed.py           # generate 100k routes around Canmore
+  add_bbox_index.py # one-off (lat, lon) index creation
+  benchmark/        # latency benchmarks + results CSVs
 ```
 
 ## Running
