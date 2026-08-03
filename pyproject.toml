@@ -20,6 +20,7 @@ dependencies = [
     "pygeohash>=3.2.2",
     "pyjwt>=2.12.1",
     "python-dotenv>=1.2.2",
+    "redis>=6.0.0",
     "slowapi>=0.1.9",
     "sqlalchemy[asyncio]>=2.0.49",
     "uvicorn>=0.46.0",

@@ -15,6 +15,16 @@ services:
       interval: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    restart: always
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 5
+
   api:
     build: .
     ports:
@@ -24,8 +34,16 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       POSTGRES_HOST: db
       POSTGRES_PORT: "5432"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      # Overridable from the shell so the benchmark A/B needs no file edits:
+      #   CACHE_ENABLED=false RATE_LIMIT_ENABLED=false docker compose up -d api
+      CACHE_ENABLED: "${CACHE_ENABLED:-true}"
+      RATE_LIMIT_ENABLED: "${RATE_LIMIT_ENABLED:-true}"
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       otel-collector:
         condition: service_started

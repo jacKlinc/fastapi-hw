@@ -14,6 +14,8 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from pygeohash import encode
 
+from app.core.cache import RadiusCache, get_cache, pagination_signature, radius_key
+from app.core.config import settings
 from app.core.security import decrypt_payload
 from app.db.session import get_db, get_async_db
 from app.db.models import Routes
@@ -21,6 +23,7 @@ from app.schemas.routes import (
     BboxOut,
     CreateRoute,
     PaginationParams,
+    RadiusOut,
     RouteOut,
     pagination_params,
 )
@@ -33,7 +36,7 @@ limiter = Limiter(
     key_func=get_remote_address,
     strategy="fixed-window",
     storage_uri="memory://",
-    enabled=True,
+    enabled=settings.rate_limit_enabled,
 )
 # Authenticated requests usually get a higher limit than anonymous
 # They are easier to track so are given 10-100x rate limit
@@ -139,21 +142,35 @@ def f_paginate(route_id: float, db: Session = Depends(get_db)):
 
 
 @limiter.limit("5/minute", per_method=True)
-@router.get("/radius/{radius}")
-def get_route_within_radius(
+@router.get("/radius/{radius}", response_model=RadiusOut)
+async def get_route_within_radius(
     request: Request,
     radius: int,
     lat: float,
     lon: float,
     pagination: PaginationParams = Depends(pagination_params),
     token: str = Header(None),
-    session: Session = Depends(get_db),
+    session: AsyncSession = Depends(get_async_db),
+    cache: RadiusCache = Depends(get_cache),
 ):
-    """Returns routes within radius. distance[km]"""
+    """Returns routes within radius. distance[km]
+
+    Cache-aside: the prefix scan is unindexed and returns up to a page of rows,
+    so this is the read worth caching. Keyed on (geo_search, pagination window),
+    which is everything the result depends on. 404s are not cached, so a route
+    created into an empty cell shows up immediately.
+    """
     decrypt_payload(token)
     # This is dependent on
     geo_search = calculate_geohash(radius, lat, lon)
     logger.info("geo_search=%s", geo_search)
+
+    key = radius_key(geo_search, pagination_signature(pagination))
+    cached = await cache.get(key)
+    if cached:
+        logger.info("Cache hit radius=%s geo_search=%s", radius, geo_search)
+        return RadiusOut(**cached)
+
     stmt = select(Routes).where(Routes.geohash.startswith(geo_search)).order_by("id")
 
     # page-based
@@ -190,15 +207,19 @@ def get_route_within_radius(
             pagination.offset,
         )
 
-    routes = session.execute(stmt).scalars().all()
+    result = await session.execute(stmt)
+    routes = result.scalars().all()
     if not routes:
         logger.error("Route not found for radius: radius=%s", radius)
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Route not found for radius"
         )
-    logger.info("Fetched route radius=%s", radius)
+    logger.info("Cache miss, fetched route radius=%s", radius)
     cursor = base64.urlsafe_b64encode(str(routes[-1].id).encode()).decode()
-    return {"routes": routes, "cursor": cursor}
+
+    payload = RadiusOut(routes=routes, cursor=cursor)
+    await cache.set(geo_search, key, payload.model_dump(mode="json"))
+    return payload
 
 
 @limiter.limit("5/minute", per_method=True)
@@ -208,8 +229,9 @@ async def create_route(
     route: CreateRoute,
     token: str = Header(None),
     session: AsyncSession = Depends(get_async_db),
+    cache: RadiusCache = Depends(get_cache),
 ):
-    """Creates route"""
+    """Creates route and invalidates any radius search that should now include it"""
     decrypt_payload(token)
     r = Routes(
         name=route.name,
@@ -219,6 +241,9 @@ async def create_route(
         created_at=datetime.now(),  # asyncpg does not allow timezone-aware datetimes while sync one does
     )
     session.add(r)
-    await session.commit()
-    logger.info("Created route name=%s geohash=%s", r.name, r.geohash)
-    return {"Result": "Success!"}
+    await session.commit()  # expire_on_commit=False, so r.id is readable without a refresh
+
+    await cache.invalidate(r.geohash)
+
+    logger.info("Created route id=%s name=%s geohash=%s", r.id, r.name, r.geohash)
+    return {"Result": "Success!", "id": r.id}

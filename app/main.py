@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi_pagination import add_pagination
 from app.api.routes import auth, routes
+from app.core.cache import radius_cache
 from app.core.logging import setup_logging
 
 logger = logging.getLogger(__name__)
@@ -15,7 +16,9 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     setup_logging()
     logger.info("Starting up")
+    await radius_cache.connect()
     yield
+    await radius_cache.aclose()
     logger.info("Shutting down")
 
 

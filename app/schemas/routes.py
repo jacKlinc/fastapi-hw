@@ -27,6 +27,11 @@ class BboxOut(BaseModel):
     capped: bool
 
 
+class RadiusOut(BaseModel):
+    routes: list[RouteOut]
+    cursor: str
+
+
 class PaginationParams(BaseModel):
     offset: Optional[int] = None  # where the rows start
     limit: Optional[int] = None  # how many rows
