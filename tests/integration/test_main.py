@@ -86,4 +86,6 @@ def test_create_route(client, auth_token):
         headers={"token": auth_token},
     )
     assert response.status_code == 200
-    assert response.json() == {"Result": "Success!"}
+    body = response.json()
+    assert body["Result"] == "Success!"
+    assert isinstance(body["id"], int)
