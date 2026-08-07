@@ -28,6 +28,7 @@ from app.schemas.routes import (
 logger = logging.getLogger(__name__)
 
 BBOX_LIMIT = 500
+EARTH_RADIUS_KM = 6371.0
 
 limiter = Limiter(
     key_func=get_remote_address,
@@ -79,6 +80,54 @@ def get_routes_in_bbox(
         "total_count": total_count,
         "capped": total_count > BBOX_LIMIT,
     }
+
+
+def haversine_km(lat: float, lon: float):
+    """Great-circle distance in km from (lat, lon) to each row, as a SQL expression.
+
+    True haversine rather than the spherical law of cosines that often wears the
+    name — the latter loses precision at short distances. Built from func.* so the
+    origin stays a bound parameter.
+    """
+    lat1, lon1 = func.radians(lat), func.radians(lon)
+    lat2, lon2 = func.radians(Routes.lat), func.radians(Routes.lon)
+
+    half_dlat = (lat2 - lat1) / 2
+    half_dlon = (lon2 - lon1) / 2
+    a = func.sin(half_dlat) * func.sin(half_dlat) + func.cos(lat1) * func.cos(
+        lat2
+    ) * func.sin(half_dlon) * func.sin(half_dlon)
+
+    return 2 * EARTH_RADIUS_KM * func.asin(func.sqrt(a))
+
+
+@router.get("/haversine/{radius}", response_model=list[RouteOut])
+def get_routes_haversine(
+    radius: float,
+    lat: float,
+    lon: float,
+    limit: int = 100,
+    session: Session = Depends(get_db),
+):
+    """Returns routes within radius by exact great-circle distance. distance[km]
+
+    The control case for /routes/radius/{radius}: same question, no approximation
+    and no optimisation. Every row gets a trig evaluation and no index can help,
+    since the predicate is a function of both lat and lon.
+
+    Deliberately plain — no auth, no pagination, no cache — so a benchmark against
+    it measures the search technique rather than the surrounding machinery. Returns
+    an empty list rather than the 404 the radius endpoint raises.
+    """
+    stmt = (
+        select(Routes)
+        .where(haversine_km(lat, lon) <= radius)
+        .order_by(Routes.id)
+        .limit(limit)
+    )
+    routes = session.execute(stmt).scalars().all()
+    logger.info("Fetched haversine routes count=%s radius=%s", len(routes), radius)
+    return routes
 
 
 @limiter.limit("5/minute", per_method=True)

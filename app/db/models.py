@@ -11,7 +11,17 @@ class Base(DeclarativeBase):
 
 class Routes(Base):
     __tablename__ = "routes"
-    __table_args__ = (Index("ix_routes_lat_lon", "lat", "lon"),)
+    __table_args__ = (
+        Index("ix_routes_lat_lon", "lat", "lon"),
+        # varchar_pattern_ops so LIKE 'prefix%' can use the index: the default
+        # opclass follows the DB collation (en_US.utf8 here), under which a plain
+        # btree can't serve prefix matching. Ignored by SQLite in tests.
+        Index(
+            "ix_routes_geohash",
+            "geohash",
+            postgresql_ops={"geohash": "varchar_pattern_ops"},
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(255))
