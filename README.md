@@ -16,8 +16,11 @@ A REST API for managing geographic routes. Users register, authenticate via JWT,
 - 5 requests a minute was chosen for ease of testing
 
 ### Geohashing
-- Geohash-based proximity search over 100k generated routes centred on Canmore. Benchmarked against brute force haversine — ~4x faster at 1k points.
-- Query performance degrades beyond 20km radius due to unindexed prefix scan — a trie or sorted index would restore O(1) lookup at scale
+- Geohash-based proximity search over 100k generated routes centred on Canmore.
+- `GET /routes/haversine/{radius}` is the control: the same question answered exactly, by computing great-circle distance for every row in SQL with no index able to help. Deliberately plain — no auth, no pagination, no cache — so benchmarking against it measures the search technique rather than the surrounding machinery.
+- **The geohash search is 3.6x faster than exact haversine, and wrong most of the time** (see [Benchmarks](#benchmarks)). This README long claimed "~4x faster than brute force haversine" with no haversine code in the repo to support it. The speed claim turns out to be about right — but only after adding the `ix_routes_geohash` index it silently depended on, and it says nothing about the answers being correct.
+- The correctness problem is the interesting one. `calculate_geohash` picks a prefix length whose cell is about the size of the search radius, then returns everything in *that one cell*. But the query circle is centred on the origin while the cell is fixed by the grid — an origin near a cell edge has most of its circle in neighbouring cells that are never searched. Recall at a 10km radius is **5.3%**. The standard fix is to search the cell plus its 8 neighbours and then filter by true distance, which makes the geohash a candidate-set prefilter rather than the answer.
+- Prefix matching only uses an index with the right opclass — `Routes.__table_args__` declares `ix_routes_geohash` with `varchar_pattern_ops`, since the DB collation is `en_US.utf8` and a default btree can't serve `LIKE 'prefix%'` under it. Run [scripts/add_geohash_index.py](scripts/add_geohash_index.py) against a DB seeded before the index existed, same as the bbox one.
 
 ### Bounding Box Search
 - `GET /routes/bbox?min_lat=&min_lon=&max_lat=&max_lon=` returns routes inside a lat/lon box — the shape a map frontend actually asks for, since a viewport is a rectangle, not a radius.
@@ -60,6 +63,79 @@ Bounding box ([bbox.py](scripts/benchmark/bbox/bbox.py), 1000 requests mixing 1k
 
 The `(lat, lon)` index roughly halves the median. p95 barely moves because the large "zoomed out" boxes are limit-bound, not scan-bound — the index can't help when you're returning 500 rows either way.
 
+Haversine control ([haversine.py](scripts/benchmark/haversine/haversine.py)). This one took three attempts to measure honestly, and the wrong turns are worth more than the final table.
+
+**Attempt 1 — HTTP, 100 rows per request.** Haversine 8.0ms mean, geohash 11.2ms: the exact search apparently beating the optimised one. It wasn't. Both endpoints `ORDER BY id LIMIT 100`, so Postgres walks the primary key index and stops at the 100th match, never evaluating the predicate over the table:
+
+| Query | rows matching | plan | execution |
+| --- | --- | --- | --- |
+| haversine 50km | ~100,000 | PK index scan, early exit | 0.11 ms |
+| haversine 10km | ~3,900 | PK index scan, early exit | 1.51 ms |
+| geohash `c3j%` (50km) | ~54,000 | PK index scan, early exit | 0.15 ms |
+| geohash `c3jfx%` (10km) | 178 | **sequential scan** | 11–16 ms |
+
+Cost tracked *selectivity*, not technique. The brute force never got brute-forced.
+
+**Attempt 2 — HTTP, 10,000 rows per request.** Past the early exit, so the query genuinely runs. But now a request returning 10k rows is 1.5MB of JSON, and at limit=10,000 the round trip is 160ms of which the query is 6ms. **96% of the measurement is serialization**, which is why adding the geohash index below moved the mean by 1.5% despite making the query 75x faster:
+
+| Label | mean ms | p50 ms | p95 ms |
+| --- | --- | --- | --- |
+| haversine | 190.1 | 183.4 | 288.6 |
+| geohash_no_index | 143.3 | 144.6 | 274.3 |
+| geohash_indexed | 141.1 | 136.4 | 279.2 |
+
+**Attempt 3 — `--sql`, `COUNT(*)` straight against Postgres.** No rows to serialize and no early exit, so the predicate runs over the table exactly as the technique demands. 200 queries per label:
+
+| Label | mean ms | p50 ms | p95 ms |
+| --- | --- | --- | --- |
+| haversine_sql | 17.7 | 16.0 | 27.3 |
+| geohash_sql_no_index | 15.5 | 14.6 | 22.1 |
+| **geohash_sql_indexed** | **4.9** | **2.3** | **14.9** |
+
+**The geohash search is 3.6x faster than exact haversine — but only once the `geohash` column is indexed.** Without the index both techniques are sequential scans of 100k rows and the only difference is trig arithmetic versus a string compare, worth about 12%. That is why this README's original "~4x faster" claim didn't reproduce: the index it depends on had never been created. It exists now (`ix_routes_geohash`), and the measured 3.6x is close to what the old claim asserted.
+
+The index needs `varchar_pattern_ops`. The database collation is `en_US.utf8`, under which a default btree **cannot** serve `LIKE 'c3jfx%'` — Postgres seq-scans instead. With the right opclass that query goes from a 10.4ms sequential scan to a 0.14ms index-only scan.
+
+Accuracy is the other half, and the more damning half — recall of the geohash search against the haversine truth set, both uncapped, over 50 origins:
+
+| Radius | recall | false positives |
+| --- | --- | --- |
+| 10km | 4.8% | 0.0% |
+| 25km | 25.1% | 0.3% |
+| 50km | 65.7% | 19.0% |
+| **overall** | **52.2%** | **17.1%** |
+
+At 10km the geohash search misses 95% of the routes genuinely within the radius. It is not a faster way to get the right answer; it is a fast way to get a different one, and indexing it only makes the wrong answer arrive sooner. See the Geohashing section for the cause and the fix.
+
+The through-line: three benchmarks of the same two queries gave "haversine wins", "no difference", and "geohash wins 3.6x". Only the third measured the thing named on the tin.
+
+Redis cache ([cache.py](scripts/benchmark/cache/cache.py), 1000 requests, 95% reads over a 200-search pool at 10/25/50km):
+
+| Label | mean ms | p50 ms | p95 ms | p99 ms |
+| --- | --- | --- | --- | --- |
+| no_cache | 12.5 | 7.7 | 28.4 | 38.0 |
+| with_cache | 5.8 | 4.6 | 10.9 | 27.3 |
+
+Mean more than halves and p95 drops 62%. The tail is where it shows most: p95 is dominated by the 50km searches, which resolve to a 3-character prefix and scan essentially the whole seeded dataset — exactly the queries a cache should be absorbing. p99 improves least, because that's the 5% writes, which the cache makes marginally *slower* (they now do invalidation work on top of the insert).
+
+For comparison, the same benchmark against `GET /routes/{id}` gave 4.9 → 4.0ms mean. Picking the right endpoint mattered more than anything in the cache implementation.
+
+Two things the benchmark does deliberately:
+
+- **Bounded search pool.** Random origins would miss every time and report the cache as worthless; a real map client re-issues overlapping searches. The pool is validated at startup so empty cells (which 404) don't land in the error count.
+- **Writes stay in the mix** at 5%, so the numbers include invalidation churn rather than measuring a frozen dataset. Note that `keyspace_misses` from `redis-cli INFO` overstates the read miss rate here — each write probes 11 prefix index sets, most of which don't exist.
+
+Both runs need `RATE_LIMIT_ENABLED=false`, otherwise 5/minute means you're benchmarking 429s:
+
+```bash
+CACHE_ENABLED=false RATE_LIMIT_ENABLED=false docker compose up -d api
+uv run python scripts/benchmark/cache/cache.py --label no_cache
+
+CACHE_ENABLED=true RATE_LIMIT_ENABLED=false docker compose up -d api
+docker compose exec redis redis-cli FLUSHALL
+uv run python scripts/benchmark/cache/cache.py --label with_cache
+```
+
 Caveat learned the hard way: rebuild the Docker image before benchmarking, or you'll benchmark the old code and record wildly inflated latency.
 
 ## File Structure
@@ -82,7 +158,9 @@ app/
 scripts/
   seed.py           # generate 100k routes around Canmore
   add_bbox_index.py # one-off (lat, lon) index creation
-  benchmark/        # latency benchmarks + results CSVs
+  add_geohash_index.py # one-off geohash prefix index (varchar_pattern_ops)
+  benchmark/        # latency + accuracy benchmarks and results CSVs
+    haversine/      # exact-distance control vs the geohash search
 ```
 
 ## Running
